@@ -1,16 +1,27 @@
-name: Build Docker Image
+name: Build, Push to GHCR, and Upload Release Asset
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  release:
+    types: [created]
 
 jobs:
-  build:
+  build-push-and-attach:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write
+
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -18,17 +29,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          images: ghcr.io/yourname/mini-wgcf-gost
 
-      - name: Build & Push
+      - name: Build, Push, and Export Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/mini-wgcf-gost:latest
+          file: ./Dockerfile.alpine
           platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=./image-arm64.tar
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./image-arm64.tar
